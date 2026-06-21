@@ -1,0 +1,41 @@
+# Global Gitignore for NOC Platform
+
+# Dependencies
+node_modules/
+venv/
+env/
+.venv/
+opt/venv/
+
+# Python Cache & Compilation
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build & Dist
+dist/
+build/
+dist-ssr/
+*.egg-info/
+
+# Environment Secrets
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+
+# IDEs & OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.suo
+*.njsproj
+*.sln

@@ -1,0 +1,43 @@
+# ============================================================
+# AI-Powered NOC Platform - Python Dependencies
+# ============================================================
+
+# --- Web Framework ---
+fastapi==0.111.0          # FastAPI web framework
+uvicorn[standard]==0.29.0 # ASGI server to run FastAPI
+
+# --- Database ---
+sqlalchemy==2.0.30        # ORM for database models
+asyncpg==0.29.0           # Async PostgreSQL driver
+alembic==1.13.1           # Database migration tool
+
+# --- Settings & Environment ---
+pydantic==2.7.1           # Data validation (used heavily by FastAPI)
+pydantic-settings==2.2.1  # Load config from .env files
+python-dotenv==1.0.1      # Load .env files
+
+# --- Authentication (used in Module 2) ---
+python-jose[cryptography]==3.3.0   # JWT token handling
+passlib[bcrypt]==1.7.4             # Password hashing
+
+# --- HTTP Client (used in later modules) ---
+httpx==0.27.0             # Async HTTP client for testing
+
+# --- Utilities ---
+python-multipart==0.0.9   # For file uploads (form data)
+
+# --- Machine Learning & Analytics ---
+scikit-learn==1.4.2
+pandas==2.2.2
+numpy==1.26.4
+joblib==1.4.2
+
+# --- Reporting ---
+reportlab==4.2.0
+
+# --- AI, RAG & Agents ---
+langchain==0.2.1
+langchain-community==0.2.1
+langchain-google-genai==1.0.5
+google-generativeai==0.5.4
+chromadb==0.5.0

@@ -1,0 +1,42 @@
+# ============================================================
+# Git Ignore File
+# ============================================================
+# Tells Git which files/folders to NOT track.
+# This keeps secrets out of your repository!
+
+# Python Virtual Environment
+venv/
+env/
+.venv/
+
+# Python Cache Files (auto-generated, not needed in Git)
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Environment Variables — NEVER commit these!
+.env
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Distribution / Build
+dist/
+build/
+*.egg-info/
+
+# Test coverage reports
+htmlcov/
+.coverage
+.pytest_cache/
+
+# Alembic (database migrations) — keep .ini but ignore auto-generated versions
+# (we'll configure this properly in the database module)

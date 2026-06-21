@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database Service
+  db:
+    image: postgres:16-alpine
+    container_name: noc-postgres-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: noc_platform_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 2. FastAPI Backend Web Application Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: noc-backend-api
+    restart: always
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:password@db:5432/noc_platform_db"
+      USE_SQLITE: "False"
+      APP_ENV: production
+      DEBUG: "False"
+      PORT: 8000
+      SECRET_KEY: "change-this-in-production-long-secure-key"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  # 3. React Frontend Web Client Service (served via Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: noc-frontend-ui
+    restart: always
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
