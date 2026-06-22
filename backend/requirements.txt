@@ -9,6 +9,7 @@ uvicorn[standard]==0.29.0 # ASGI server to run FastAPI
 # --- Database ---
 sqlalchemy==2.0.30        # ORM for database models
 asyncpg==0.29.0           # Async PostgreSQL driver
+aiosqlite==0.20.0
 alembic==1.13.1           # Database migration tool
 
 # --- Settings & Environment ---
