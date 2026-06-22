@@ -13,7 +13,7 @@ import axios from 'axios';
 
 // Create a configured instance of Axios
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "https://aether-noc-backend.onrender.com",
+  baseURL: import.meta.env.VITE_API_URL || "https://aether-noc-backend.onrender.com/api/v1",
   headers: {
     'Content-Type': 'application/json',
   },

@@ -22,7 +22,7 @@ export const WebSocketProvider = ({ children }) => {
 
   const connect = () => {
     // Resolve WS protocol based on API base URL
-    const apiUrl = import.meta.env.VITE_API_URL || "wss://aether-noc-backend.onrender.com";
+    const apiUrl = import.meta.env.VITE_API_URL || "wss://aether-noc-backend.onrender.com/api/v1";
     const wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws/live';
 
     console.log(`[WS] Connecting to: ${wsUrl}`);
