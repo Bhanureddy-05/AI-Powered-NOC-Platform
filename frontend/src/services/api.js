@@ -13,7 +13,7 @@ import axios from 'axios';
 
 // Create a configured instance of Axios
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || https://aether-noc-backend.onrender.com,
+  baseURL: import.meta.env.VITE_API_URL || "https://aether-noc-backend.onrender.com",
   headers: {
     'Content-Type': 'application/json',
   },
@@ -41,7 +41,7 @@ api.interceptors.response.use(
       // Clear credentials on unauthorized/expired responses
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      
+
       // Optionally redirect to login page (can also be handled inside the React context)
       if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
         window.location.href = '/login?expired=true';
