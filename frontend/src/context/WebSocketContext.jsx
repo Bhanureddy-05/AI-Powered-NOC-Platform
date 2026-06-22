@@ -22,9 +22,9 @@ export const WebSocketProvider = ({ children }) => {
 
   const connect = () => {
     // Resolve WS protocol based on API base URL
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const apiUrl = import.meta.env.VITE_API_URL || wss://aether-noc-backend.onrender.com;
     const wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws/live';
-    
+
     console.log(`[WS] Connecting to: ${wsUrl}`);
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
@@ -41,10 +41,10 @@ export const WebSocketProvider = ({ children }) => {
       try {
         const payload = JSON.parse(event.data);
         setLastMessage(payload);
-        
+
         const eventType = payload.event;
         const data = payload.data;
-        
+
         // Notify all subscribers of this event category
         if (eventType && listenersRef.current[eventType]) {
           listenersRef.current[eventType].forEach((callback) => {
@@ -77,7 +77,7 @@ export const WebSocketProvider = ({ children }) => {
 
   useEffect(() => {
     connect();
-    
+
     return () => {
       if (socketRef.current) {
         socketRef.current.close();

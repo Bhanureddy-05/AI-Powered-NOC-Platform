@@ -44,7 +44,7 @@ export const copilotService = {
    */
   streamChat: async (sessionId, query, onChunk, onError, onDone) => {
     const token = localStorage.getItem('token');
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const apiUrl = import.meta.env.VITE_API_URL || https://aether-noc-backend.onrender.com;
 
     try {
       const response = await fetch(`${apiUrl}/copilot/sessions/${sessionId}/chat`, {

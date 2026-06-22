@@ -164,7 +164,6 @@ async def trigger_model_retraining(
             ip_address=None
         )
         db.add(audit)
-        
         return {
             "status": "success",
             "message": "Retraining finished successfully.",
