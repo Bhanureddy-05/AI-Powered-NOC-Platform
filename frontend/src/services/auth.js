@@ -16,7 +16,7 @@ export const authService = {
    * authenticates credentials and returns JWT token.
    */
   async login(username, password) {
-    const response = await api.post('/auth/login', { username, password });
+    const response = await api.post('/api/v1/auth/login', { username, password });
     return response.data; // { access_token: "...", token_type: "bearer" }
   },
 
@@ -24,7 +24,7 @@ export const authService = {
    * registers a new NOC operations user.
    */
   async register(username, email, password, role = 'operator') {
-    const response = await api.post('/auth/register', {
+    const response = await api.post('/api/v1/auth/register', {
       username,
       email,
       password,
@@ -37,7 +37,7 @@ export const authService = {
    * fetches active profile based on token.
    */
   async getMe() {
-    const response = await api.get('/auth/me');
+    const response = await api.get('/api/v1/auth/me');
     return response.data;
   },
 };
