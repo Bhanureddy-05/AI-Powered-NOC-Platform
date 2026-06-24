@@ -89,21 +89,24 @@ async def ingest_metric(
     db.add(new_metric)
     await db.flush()
 
-    # 4. Trigger alert on anomaly
-    if anomaly_res["anomaly_detected"]:
-        alert_in = AlertCreate(
-            device_id=metric_in.device_id,
-            alert_type="ANOMALY_DETECTED",
-            severity="high" if metric_in.cpu_usage > 95.0 or metric_in.packet_loss > 5.0 else "medium",
-            message=(
-                f"Network anomaly detected (score: {round(anomaly_res['anomaly_score'], 3)}). "
-                f"CPU: {metric_in.cpu_usage}%, Memory: {metric_in.memory_usage}%, "
-                f"Latency: {metric_in.latency}ms, Packet Loss: {metric_in.packet_loss}%"
-            ),
-            resolved=False,
-            status="open"
-        )
-        alert = await AlertService.create_alert(db, alert_in)
+    # 4. Trigger alert checks (Deduplication + Auto-resolution)
+    payload_dict = {
+        "cpu_usage": metric_in.cpu_usage,
+        "memory_usage": metric_in.memory_usage,
+        "latency": metric_in.latency,
+        "packet_loss": metric_in.packet_loss,
+        "bandwidth_usage": metric_in.bandwidth_usage,
+        "disk_usage": metric_in.disk_usage,
+        "hostname": metric_in.hostname,
+        "uptime": metric_in.uptime,
+        "reachability": metric_in.reachability
+    }
+    fired_alerts, resolved_alerts = await AlertService.process_device_alerts(
+        db, device, payload_dict, anomaly_res
+    )
+
+    # Broadcast alert triggers
+    for alert in fired_alerts:
         await manager.broadcast({
             "event": "alert_triggered",
             "data": {
@@ -114,7 +117,30 @@ async def ingest_metric(
                 "severity": alert.severity,
                 "message": alert.message,
                 "timestamp": alert.timestamp.isoformat(),
-                "status": alert.status
+                "status": alert.status,
+                "occurrence_count": alert.occurrence_count,
+                "first_seen": alert.first_seen.isoformat() if alert.first_seen else None,
+                "last_seen": alert.last_seen.isoformat() if alert.last_seen else None,
+            }
+        })
+
+    # Broadcast alert resolutions
+    for alert in resolved_alerts:
+        await manager.broadcast({
+            "event": "alert_resolved",
+            "data": {
+                "id": alert.id,
+                "device_id": alert.device_id,
+                "device_name": device.device_name,
+                "alert_type": alert.alert_type,
+                "severity": alert.severity,
+                "message": alert.message,
+                "timestamp": alert.timestamp.isoformat(),
+                "status": alert.status,
+                "resolved_at": alert.resolved_at.isoformat() if alert.resolved_at else None,
+                "occurrence_count": alert.occurrence_count,
+                "first_seen": alert.first_seen.isoformat() if alert.first_seen else None,
+                "last_seen": alert.last_seen.isoformat() if alert.last_seen else None,
             }
         })
 

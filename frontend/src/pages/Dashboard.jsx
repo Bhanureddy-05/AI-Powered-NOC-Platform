@@ -210,8 +210,13 @@ export const Dashboard = () => {
 
     // 2. Alert engine updates
     const unsubAlertTrigger = subscribe('alert_triggered', (alert) => {
-      pushFeedEvent('alert', `NEW ALARM: [${alert.alert_type}] on ${alert.device_name}`, 'warning');
-      setActiveAlertsCount(count => count + 1);
+      const isNew = !alert.occurrence_count || alert.occurrence_count === 1;
+      if (isNew) {
+        pushFeedEvent('alert', `NEW ALARM: [${alert.alert_type}] on ${alert.device_name}`, 'warning');
+        setActiveAlertsCount(count => count + 1);
+      } else {
+        pushFeedEvent('alert', `ALARM UPDATE: [${alert.alert_type}] on ${alert.device_name} (x${alert.occurrence_count})`, 'warning');
+      }
       
       // If alert has critical severity, update top impacted devices listing
       if (alert.severity === 'critical' || alert.severity === 'high') {

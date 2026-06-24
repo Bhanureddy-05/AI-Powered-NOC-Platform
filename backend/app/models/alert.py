@@ -37,6 +37,11 @@ class Alert(Base):
     resolved_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     resolved_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
+    # Deduplication fields (Phase 4 / Alert storm prevention)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
     # Relationships
     device = relationship("Device", back_populates="alerts")
     ticket = relationship("Ticket", back_populates="alert", uselist=False)

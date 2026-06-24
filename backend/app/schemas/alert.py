@@ -20,6 +20,9 @@ class AlertBase(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     resolved: bool = False
     status: str = Field(default="open", description="open, acknowledged, investigating, resolved")
+    occurrence_count: int = Field(default=1)
+    first_seen: datetime = Field(default_factory=datetime.utcnow)
+    last_seen: datetime = Field(default_factory=datetime.utcnow)
 
 class AlertCreate(AlertBase):
     pass

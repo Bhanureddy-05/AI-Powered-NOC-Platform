@@ -354,103 +354,10 @@ async def live_metric_simulation_loop(interval_seconds: int = 30):
                         db.add(metric)
                         await db.flush()
 
-                        # ─── Threshold-Based Alert Rules (Phase 4) ───────────────────
-                        alert_to_fire = None
-
-                        if not payload["reachability"]:
-                            alert_to_fire = AlertCreate(
-                                device_id=device.id,
-                                alert_type="DEVICE_UNREACHABLE",
-                                severity="critical",
-                                message=(
-                                    f"Device {device.device_name} ({device.ip_address}) is UNREACHABLE. "
-                                    f"Subprocess ping test failed."
-                                ),
-                                resolved=False,
-                                status="open",
-                            )
-                        elif payload["cpu_usage"] > 80.0:
-                            alert_to_fire = AlertCreate(
-                                device_id=device.id,
-                                alert_type="CPU_SPIKE",
-                                severity="critical" if payload["cpu_usage"] > 95.0 else "high",
-                                message=(
-                                    f"CPU usage at {payload['cpu_usage']}% on {device.device_name} "
-                                    f"(threshold: 80%)"
-                                ),
-                                resolved=False,
-                                status="open",
-                            )
-                        elif payload["memory_usage"] > 80.0:
-                            alert_to_fire = AlertCreate(
-                                device_id=device.id,
-                                alert_type="MEMORY_HIGH",
-                                severity="high",
-                                message=(
-                                    f"Memory usage at {payload['memory_usage']}% on {device.device_name} "
-                                    f"(threshold: 80%)"
-                                ),
-                                resolved=False,
-                                status="open",
-                            )
-                        elif payload["disk_usage"] > 90.0:
-                            alert_to_fire = AlertCreate(
-                                device_id=device.id,
-                                alert_type="DISK_HIGH",
-                                severity="high",
-                                message=(
-                                    f"Disk usage at {payload['disk_usage']}% on {device.device_name} "
-                                    f"(threshold: 90%)"
-                                ),
-                                resolved=False,
-                                status="open",
-                            )
-                        elif payload["latency"] > 200.0:
-                            alert_to_fire = AlertCreate(
-                                device_id=device.id,
-                                alert_type="LATENCY_SPIKE",
-                                severity="high" if payload["latency"] > 350.0 else "medium",
-                                message=(
-                                    f"Latency spike at {payload['latency']}ms on {device.device_name} "
-                                    f"(threshold: 200ms)"
-                                ),
-                                resolved=False,
-                                status="open",
-                            )
-                        elif payload["packet_loss"] > 3.0:
-                            alert_to_fire = AlertCreate(
-                                device_id=device.id,
-                                alert_type="PACKET_LOSS",
-                                severity="medium",
-                                message=(
-                                    f"Packet loss at {payload['packet_loss']}% on {device.device_name} "
-                                    f"(threshold: 3%)"
-                                ),
-                                resolved=False,
-                                status="open",
-                            )
-                        elif anomaly_res["anomaly_detected"]:
-                            alert_to_fire = AlertCreate(
-                                device_id=device.id,
-                                alert_type="ANOMALY_DETECTED",
-                                severity="high" if anomaly_res["anomaly_score"] > 0.7 else "medium",
-                                message=(
-                                    f"ML anomaly detected (score: {round(anomaly_res['anomaly_score'], 3)}) "
-                                    f"on {device.device_name} — CPU: {payload['cpu_usage']}%, "
-                                    f"Mem: {payload['memory_usage']}%, Latency: {payload['latency']}ms"
-                                ),
-                                resolved=False,
-                                status="open",
-                            )
-
-                        # Create alert in DB if triggered
-                        fired_alert = None
-                        if alert_to_fire:
-                            fired_alert = await AlertService.create_alert(db, alert_to_fire)
-                            logger.info(
-                                f"[ALERT] {fired_alert.alert_type} on {device.device_name} "
-                                f"(severity={fired_alert.severity})"
-                             )
+                        # ─── Process & Deduplicate Telemetry Alerts ───────────────────
+                        fired_alerts, resolved_alerts = await AlertService.process_device_alerts(
+                            db, device, payload, anomaly_res
+                        )
 
                         await db.commit()
 
@@ -476,8 +383,12 @@ async def live_metric_simulation_loop(interval_seconds: int = 30):
                             },
                         })
 
-                        # Broadcast alert if one was fired
-                        if fired_alert:
+                        # Broadcast alert triggers
+                        for fired_alert in fired_alerts:
+                            logger.info(
+                                f"[ALERT] {fired_alert.alert_type} on {device.device_name} "
+                                f"(severity={fired_alert.severity}, occurrences={fired_alert.occurrence_count})"
+                            )
                             await manager.broadcast({
                                 "event": "alert_triggered",
                                 "data": {
@@ -488,7 +399,33 @@ async def live_metric_simulation_loop(interval_seconds: int = 30):
                                     "severity": fired_alert.severity,
                                     "message": fired_alert.message,
                                     "timestamp": fired_alert.timestamp.isoformat(),
-                                    "status": "open",
+                                    "status": fired_alert.status,
+                                    "occurrence_count": fired_alert.occurrence_count,
+                                    "first_seen": fired_alert.first_seen.isoformat() if fired_alert.first_seen else None,
+                                    "last_seen": fired_alert.last_seen.isoformat() if fired_alert.last_seen else None,
+                                },
+                            })
+
+                        # Broadcast alert resolutions
+                        for resolved_alert in resolved_alerts:
+                            logger.info(
+                                f"[ALERT_RESOLVED] {resolved_alert.alert_type} on {device.device_name} cleared."
+                            )
+                            await manager.broadcast({
+                                "event": "alert_resolved",
+                                "data": {
+                                    "id": resolved_alert.id,
+                                    "device_id": device.id,
+                                    "device_name": device.device_name,
+                                    "alert_type": resolved_alert.alert_type,
+                                    "severity": resolved_alert.severity,
+                                    "message": resolved_alert.message,
+                                    "timestamp": resolved_alert.timestamp.isoformat(),
+                                    "status": resolved_alert.status,
+                                    "resolved_at": resolved_alert.resolved_at.isoformat() if resolved_alert.resolved_at else None,
+                                    "occurrence_count": resolved_alert.occurrence_count,
+                                    "first_seen": resolved_alert.first_seen.isoformat() if resolved_alert.first_seen else None,
+                                    "last_seen": resolved_alert.last_seen.isoformat() if resolved_alert.last_seen else None,
                                 },
                             })
 
@@ -559,24 +496,113 @@ async def seed_initial_metrics():
 # ============================================================
 async def patch_database_schema():
     """
-    Ensures that device_metrics table has all the Phase 2 columns (disk_usage, hostname, uptime, reachability).
+    Ensures that device_metrics and alerts tables have all the required columns for
+    real telemetry and alert deduplication.
     """
     from sqlalchemy import text
     try:
         async with async_session() as db:
-            columns_to_add = [
+            # 1. Patch device_metrics table
+            metrics_cols = [
                 ("disk_usage", "FLOAT NULL"),
                 ("hostname", "VARCHAR(100) NULL"),
                 ("uptime", "FLOAT NULL"),
                 ("reachability", "BOOLEAN NOT NULL DEFAULT 1")
             ]
-            for col_name, col_type in columns_to_add:
+            for col_name, col_type in metrics_cols:
                 try:
                     await db.execute(text(f"ALTER TABLE device_metrics ADD COLUMN {col_name} {col_type}"))
                     logger.info(f"[DB_PATCH] Added column {col_name} to device_metrics table.")
                 except Exception as e:
-                    # Ignore if column already exists
-                    logger.debug(f"[DB_PATCH] Column {col_name} check: {e}")
+                    logger.debug(f"[DB_PATCH] device_metrics column {col_name} check: {e}")
+
+            # 2. Patch alerts table for deduplication
+            alerts_cols = [
+                ("occurrence_count", "INTEGER NOT NULL DEFAULT 1"),
+                ("first_seen", "DATETIME NULL"),
+                ("last_seen", "DATETIME NULL")
+            ]
+            for col_name, col_type in alerts_cols:
+                try:
+                    await db.execute(text(f"ALTER TABLE alerts ADD COLUMN {col_name} {col_type}"))
+                    logger.info(f"[DB_PATCH] Added column {col_name} to alerts table.")
+                except Exception as e:
+                    logger.debug(f"[DB_PATCH] alerts column {col_name} check: {e}")
+
+            # 3. Deduplicate any legacy active alerts in the database
+            try:
+                stmt = text(
+                    "SELECT device_id, alert_type, COUNT(*) as cnt "
+                    "FROM alerts WHERE status != 'resolved' "
+                    "GROUP BY device_id, alert_type HAVING cnt > 1"
+                )
+                res = await db.execute(stmt)
+                duplicates = res.all()
+                if duplicates:
+                    logger.info(f"[DB_PATCH] Found {len(duplicates)} unique groups of duplicate active alerts to deduplicate.")
+                    for device_id, alert_type, cnt in duplicates:
+                        # Get all active alerts of this type for this device, sorted by timestamp ascending
+                        stmt_alerts = text(
+                            "SELECT id, occurrence_count, timestamp, first_seen, last_seen "
+                            "FROM alerts WHERE device_id = :device_id AND alert_type = :alert_type AND status != 'resolved' "
+                            "ORDER BY timestamp ASC"
+                        )
+                        res_alerts = await db.execute(stmt_alerts, {"device_id": device_id, "alert_type": alert_type})
+                        alerts_list = res_alerts.all()
+                        
+                        master_alert = alerts_list[0]
+                        master_id = master_alert.id
+                        
+                        total_occurrences = 0
+                        earliest_seen = master_alert.timestamp
+                        latest_seen = master_alert.timestamp
+                        
+                        # Support cases where timestamp/first_seen is string (sqlite returning raw text)
+                        from datetime import datetime
+                        def parse_dt(val):
+                            if isinstance(val, str):
+                                # SQLite datetime formats can vary
+                                for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+                                    try:
+                                        return datetime.strptime(val, fmt)
+                                    except ValueError:
+                                        continue
+                            return val or datetime.utcnow()
+
+                        earliest_seen = parse_dt(earliest_seen)
+                        latest_seen = parse_dt(latest_seen)
+                        
+                        for a in alerts_list:
+                            total_occurrences += (a.occurrence_count or 1)
+                            t = parse_dt(a.timestamp)
+                            if t < earliest_seen:
+                                earliest_seen = t
+                            if t > latest_seen:
+                                latest_seen = t
+                        
+                        # Update master alert
+                        stmt_update = text(
+                            "UPDATE alerts SET occurrence_count = :occ, "
+                            "first_seen = :first, last_seen = :last "
+                            "WHERE id = :id"
+                        )
+                        await db.execute(stmt_update, {
+                            "occ": total_occurrences,
+                            "first": earliest_seen.strftime("%Y-%m-%d %H:%M:%S.%f"),
+                            "last": latest_seen.strftime("%Y-%m-%d %H:%M:%S.%f"),
+                            "id": master_id
+                        })
+                        
+                        # Delete the other duplicate records
+                        other_ids = [a.id for a in alerts_list[1:]]
+                        for other_id in other_ids:
+                            await db.execute(text("DELETE FROM alert_history WHERE alert_id = :id"), {"id": other_id})
+                            await db.execute(text("DELETE FROM alerts WHERE id = :id"), {"id": other_id})
+                            
+                    logger.info("[DB_PATCH] Completed deduplication of legacy active alerts.")
+            except Exception as e:
+                logger.error(f"[DB_PATCH] Error deduplicating legacy alerts: {e}", exc_info=True)
+
             await db.commit()
     except Exception as e:
         logger.error(f"[DB_PATCH] Error patching database schema: {e}")

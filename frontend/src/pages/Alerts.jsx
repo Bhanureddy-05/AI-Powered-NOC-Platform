@@ -11,6 +11,35 @@ import { useWebSocket } from '../context/WebSocketContext';
 import { ShieldAlert, CheckCircle, Search, AlertCircle, Clock, FileText, ChevronRight, CornerDownRight } from 'lucide-react';
 import { Toast } from '../components/Toast';
 
+const formatDuration = (firstSeen, lastSeen) => {
+  if (!firstSeen || !lastSeen) return '0s';
+  const start = new Date(firstSeen);
+  const end = new Date(lastSeen);
+  const diffMs = end - start;
+  if (diffMs < 0) return '0s';
+  
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays > 0) {
+    return `${diffDays}d ${diffHours % 24}h ${diffMins % 60}m`;
+  }
+  if (diffHours > 0) {
+    return `${diffHours}h ${diffMins % 60}m`;
+  }
+  if (diffMins > 0) {
+    return `${diffMins}m ${diffSecs % 60}s`;
+  }
+  return `${diffSecs}s`;
+};
+
+const formatTime = (dateStr) => {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
 export const Alerts = () => {
   const [alerts, setAlerts] = useState([]);
   const [total, setTotal] = useState(0);
@@ -76,13 +105,25 @@ export const Alerts = () => {
   // Setup WebSocket Listeners for real-time alerting
   useEffect(() => {
     const unsubTriggered = subscribe('alert_triggered', (newAlert) => {
-      // Append to the list if pagination matches or page is 1
       setAlerts(prev => {
-        // Prevent duplicate append
-        if (prev.some(a => a.id === newAlert.id)) return prev;
+        if (prev.some(a => a.id === newAlert.id)) {
+          // Update the existing alert in place with new occurrence count, last_seen, message, severity, etc.
+          return prev.map(a => a.id === newAlert.id ? { ...a, ...newAlert } : a);
+        }
         return [newAlert, ...prev].slice(0, size);
       });
-      showToast('warning', `NEW ALERT: Anomaly flagged on device! (${newAlert.severity.toUpperCase()})`);
+      setSelectedAlert(prev => {
+        if (prev && prev.id === newAlert.id) {
+          return { ...prev, ...newAlert };
+        }
+        return prev;
+      });
+      const isNew = !newAlert.occurrence_count || newAlert.occurrence_count === 1;
+      if (isNew) {
+        showToast('warning', `NEW ALERT: ${newAlert.alert_type} on device! (${newAlert.severity.toUpperCase()})`);
+      } else {
+        showToast('warning', `ALERT UPDATE: ${newAlert.alert_type} (x${newAlert.occurrence_count})`);
+      }
       refreshStats();
     });
 
@@ -310,7 +351,14 @@ export const Alerts = () => {
                         className={`hover:bg-slate-900/40 transition-all cursor-pointer ${selectedAlert?.id === alert.id ? 'bg-violet-600/5 border-l-2 border-l-violet-500' : ''}`}
                       >
                         <td className="py-3 px-6">
-                          <span className="font-semibold text-slate-200 block text-xs">{alert.alert_type}</span>
+                          <span className="font-semibold text-slate-200 block text-xs">
+                            {alert.alert_type}
+                            {alert.occurrence_count > 1 && (
+                              <span className="ml-2 bg-slate-800 border border-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full text-[9px] font-bold">
+                                x{alert.occurrence_count}
+                              </span>
+                            )}
+                          </span>
                           <span className="text-[11px] text-slate-500 block truncate max-w-xs mt-0.5">{alert.message}</span>
                         </td>
                         <td className="py-3 px-6 font-medium text-slate-300 text-xs">
@@ -380,6 +428,31 @@ export const Alerts = () => {
                     <span className={`inline-block px-1.5 py-0.5 border rounded text-[9px] font-bold uppercase mt-1 ${getStatusColor(selectedAlert.status)}`}>
                       {selectedAlert.status}
                     </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Deduplication & Lifetime Summary */}
+              <div className="mb-6 border-b border-slate-800/80 pb-6 text-xs">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Deduplication & Lifetime</h3>
+                <div className="grid grid-cols-2 gap-3 bg-slate-900/40 border border-slate-800/50 p-3 rounded-xl">
+                  <div>
+                    <span className="text-slate-500 block text-[10px] font-medium">Occurrences</span>
+                    <span className="text-slate-200 font-semibold text-sm">{selectedAlert.occurrence_count || 1}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] font-medium">Duration</span>
+                    <span className="text-violet-400 font-semibold text-sm">
+                      {formatDuration(selectedAlert.first_seen || selectedAlert.timestamp, selectedAlert.last_seen || selectedAlert.timestamp)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] font-medium">First Seen</span>
+                    <span className="text-slate-300 font-medium">{formatTime(selectedAlert.first_seen || selectedAlert.timestamp)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] font-medium">Last Seen</span>
+                    <span className="text-slate-300 font-medium">{formatTime(selectedAlert.last_seen || selectedAlert.timestamp)}</span>
                   </div>
                 </div>
               </div>

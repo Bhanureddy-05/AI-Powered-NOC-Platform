@@ -81,7 +81,11 @@ class AlertService:
                 "resolved_at": alert.resolved_at,
                 "resolved_by": alert.resolved_by,
                 "device_name": dev_name,
-                "device_ip": dev_ip
+                "device_ip": dev_ip,
+                # Deduplication additions
+                "occurrence_count": alert.occurrence_count,
+                "first_seen": alert.first_seen,
+                "last_seen": alert.last_seen
             }
             alerts_list.append(alert_dict)
             
@@ -106,16 +110,40 @@ class AlertService:
     @staticmethod
     async def create_alert(db: AsyncSession, alert_in: AlertCreate) -> Alert:
         """
-        Creates a new alert record. Logs the initial transition to alert_history.
+        Creates a new alert record or updates an existing active alert (deduplication).
+        Logs the initial transition to alert_history on creation.
         """
+        # Deduplication check: Find an existing active alert for this device & type
+        stmt = select(Alert).filter(
+            Alert.device_id == alert_in.device_id,
+            Alert.alert_type == alert_in.alert_type,
+            Alert.status != "resolved"
+        )
+        res = await db.execute(stmt)
+        existing_alert = res.scalars().first()
+
+        if existing_alert:
+            # Update the existing active alert
+            existing_alert.occurrence_count += 1
+            existing_alert.last_seen = datetime.utcnow()
+            existing_alert.message = alert_in.message
+            existing_alert.severity = alert_in.severity  # Update severity if threshold rules adjusted it
+            await db.flush()
+            return existing_alert
+
+        # Issue is new, create alert record
+        now = datetime.utcnow()
         new_alert = Alert(
             device_id=alert_in.device_id,
             alert_type=alert_in.alert_type,
             severity=alert_in.severity,
             message=alert_in.message,
-            timestamp=alert_in.timestamp or datetime.utcnow(),
+            timestamp=alert_in.timestamp or now,
             resolved=alert_in.resolved,
-            status=alert_in.status
+            status=alert_in.status,
+            occurrence_count=1,
+            first_seen=alert_in.first_seen or now,
+            last_seen=alert_in.last_seen or now
         )
         db.add(new_alert)
         await db.flush() # Populate the UUID ID
@@ -130,6 +158,116 @@ class AlertService:
         db.add(history_entry)
         
         return new_alert
+
+    @staticmethod
+    async def process_device_alerts(
+        db: AsyncSession,
+        device,
+        payload: dict,
+        anomaly_res: dict
+    ) -> tuple[list[Alert], list[Alert]]:
+        """
+        Evaluates metrics for a device, creates/updates active alerts,
+        and automatically resolves alerts when conditions return to normal.
+        Returns: (fired_alerts, resolved_alerts)
+        """
+        # Define triggers based on current telemetry
+        is_reachable = payload.get("reachability", True)
+
+        conditions = {
+            "DEVICE_UNREACHABLE": not is_reachable,
+            "CPU_SPIKE": is_reachable and payload.get("cpu_usage", 0.0) > 80.0,
+            "MEMORY_HIGH": is_reachable and payload.get("memory_usage", 0.0) > 80.0,
+            "DISK_HIGH": is_reachable and payload.get("disk_usage") is not None and payload.get("disk_usage", 0.0) > 90.0,
+            "LATENCY_SPIKE": is_reachable and payload.get("latency", 0.0) > 200.0,
+            "PACKET_LOSS": is_reachable and payload.get("packet_loss", 0.0) > 3.0,
+            "ANOMALY_DETECTED": is_reachable and anomaly_res.get("anomaly_detected", False)
+        }
+
+        configs = {
+            "DEVICE_UNREACHABLE": {
+                "severity": "critical",
+                "message": f"Device {device.device_name} ({device.ip_address}) is UNREACHABLE. Subprocess ping test failed."
+            },
+            "CPU_SPIKE": {
+                "severity": "critical" if payload.get("cpu_usage", 0.0) > 95.0 else "high",
+                "message": f"CPU usage at {payload.get('cpu_usage', 0.0)}% on {device.device_name} (threshold: 80%)"
+            },
+            "MEMORY_HIGH": {
+                "severity": "high",
+                "message": f"Memory usage at {payload.get('memory_usage', 0.0)}% on {device.device_name} (threshold: 80%)"
+            },
+            "DISK_HIGH": {
+                "severity": "high",
+                "message": f"Disk usage at {payload.get('disk_usage', 0.0)}% on {device.device_name} (threshold: 90%)"
+            },
+            "LATENCY_SPIKE": {
+                "severity": "high" if payload.get("latency", 0.0) > 350.0 else "medium",
+                "message": f"Latency spike at {payload.get('latency', 0.0)}ms on {device.device_name} (threshold: 200ms)"
+            },
+            "PACKET_LOSS": {
+                "severity": "medium",
+                "message": f"Packet loss at {payload.get('packet_loss', 0.0)}% on {device.device_name} (threshold: 3%)"
+            },
+            "ANOMALY_DETECTED": {
+                "severity": "high" if anomaly_res.get("anomaly_score", 0.0) > 0.7 else "medium",
+                "message": f"ML anomaly detected (score: {round(anomaly_res.get('anomaly_score', 0.0), 3)}) on {device.device_name} — CPU: {payload.get('cpu_usage', 0.0)}%, Mem: {payload.get('memory_usage', 0.0)}%, Latency: {payload.get('latency', 0.0)}ms"
+            }
+        }
+
+        fired = []
+        resolved = []
+
+        for alert_type, triggered in conditions.items():
+            if triggered:
+                # Trigger alert (create/deduplicate)
+                alert_in = AlertCreate(
+                    device_id=device.id,
+                    alert_type=alert_type,
+                    severity=configs[alert_type]["severity"],
+                    message=configs[alert_type]["message"],
+                    resolved=False,
+                    status="open"
+                )
+                alert = await AlertService.create_alert(db, alert_in)
+                fired.append(alert)
+            else:
+                # Issue cleared. Check if an active alert exists to auto-resolve
+                stmt = select(Alert).filter(
+                    Alert.device_id == device.id,
+                    Alert.alert_type == alert_type,
+                    Alert.status != "resolved"
+                )
+                res = await db.execute(stmt)
+                active_alert = res.scalars().first()
+                if active_alert:
+                    old_status = active_alert.status
+                    active_alert.status = "resolved"
+                    active_alert.resolved = True
+                    active_alert.resolved_at = datetime.utcnow()
+                    active_alert.resolved_by = None
+
+                    # Log to AlertHistory
+                    history_entry = AlertHistory(
+                        alert_id=active_alert.id,
+                        status_from=old_status,
+                        status_to="resolved",
+                        changed_by=None,
+                        notes="Alert automatically resolved as telemetry condition cleared."
+                    )
+                    db.add(history_entry)
+
+                    # Log to AuditLog
+                    audit = AuditLog(
+                        user_id=None,
+                        action="alert_auto_resolved",
+                        details=f"Alert: {active_alert.id} ({active_alert.alert_type}) automatically resolved by telemetry system",
+                        ip_address="127.0.0.1"
+                    )
+                    db.add(audit)
+                    resolved.append(active_alert)
+
+        return fired, resolved
 
     @staticmethod
     async def update_alert_status(
