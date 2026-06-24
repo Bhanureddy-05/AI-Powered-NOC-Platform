@@ -11,9 +11,23 @@
 
 import axios from 'axios';
 
+function resolveApiUrl() {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) return envUrl;
+
+  const isLocal =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+
+  if (isLocal) {
+    return 'http://localhost:8000/api/v1';
+  }
+  return 'https://aether-noc-backend.onrender.com/api/v1';
+}
+
 // Create a configured instance of Axios
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "https://aether-noc-backend.onrender.com/api/v1",
+  baseURL: resolveApiUrl(),
   headers: {
     'Content-Type': 'application/json',
   },

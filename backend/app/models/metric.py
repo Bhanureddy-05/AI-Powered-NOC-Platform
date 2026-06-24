@@ -28,6 +28,12 @@ class DeviceMetric(Base):
     latency: Mapped[float] = mapped_column(Float, nullable=False)         # Milliseconds (ms)
     packet_loss: Mapped[float] = mapped_column(Float, nullable=False)     # Percentage (0.0 to 100.0)
     bandwidth_usage: Mapped[float] = mapped_column(Float, nullable=False) # Mbps
+    
+    # Real Telemetry additions (Phase 2)
+    disk_usage: Mapped[float] = mapped_column(Float, nullable=True)       # Percentage (0.0 to 100.0)
+    hostname: Mapped[str] = mapped_column(String(100), nullable=True)
+    uptime: Mapped[float] = mapped_column(Float, nullable=True)           # Seconds
+    reachability: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Anomaly Detection results (populated by Isolation Forest)
     anomaly_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)

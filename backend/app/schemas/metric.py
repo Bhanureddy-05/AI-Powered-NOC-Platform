@@ -23,6 +23,10 @@ class DeviceMetricBase(BaseModel):
     latency: float = Field(..., description="Network latency in milliseconds (>= 0.0)")
     packet_loss: float = Field(..., description="Packet loss percentage (0.0 to 100.0)")
     bandwidth_usage: float = Field(..., description="Interface bandwidth usage in Mbps (>= 0.0)")
+    disk_usage: Optional[float] = Field(default=None, description="Disk utilization percentage (0.0 to 100.0)")
+    hostname: Optional[str] = Field(default=None, description="Host system name")
+    uptime: Optional[float] = Field(default=None, description="System uptime in seconds")
+    reachability: bool = Field(default=True, description="Ping status connectivity indicator")
     timestamp: Optional[datetime] = Field(default=None, description="Time of measurement. Defaults to database insertion time.")
 
     @field_validator("cpu_usage", "memory_usage", "packet_loss")
